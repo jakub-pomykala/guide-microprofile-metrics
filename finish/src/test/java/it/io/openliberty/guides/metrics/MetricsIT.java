@@ -13,17 +13,31 @@
 // tag::MetricsTest[]
 package it.io.openliberty.guides.metrics;
 
-import static org.junit.jupiter.api.Assertions.*;
-import java.io.*;
-import java.util.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
+
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.security.KeyStore;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Properties;
+
 import javax.ws.rs.client.Client;
 import javax.ws.rs.client.ClientBuilder;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
+
 import org.apache.cxf.jaxrs.provider.jsrjsonp.JsrJsonpProvider;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer.OrderAnnotation;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
@@ -33,10 +47,19 @@ import org.junit.jupiter.api.TestMethodOrder;
 @TestMethodOrder(OrderAnnotation.class)
 // end::TestMethodOrder[]
 public class MetricsIT {
+
+  private static final String keystorePath = System.getProperty("user.dir")
+                              + "/target/liberty/wlp/usr/servers/"
+                              + "defaultServer/resources/security/key.p12";
+  private static final String systemEnvPath =  System.getProperty("user.dir")
+                              + "/target/liberty/wlp/usr/servers/"
+                              + "defaultServer/server.env";
+	  
   private static String httpPort;
   private static String httpsPort;
   private static String baseHttpUrl;
   private static String baseHttpsUrl;
+  private static KeyStore keystore;
 
   private List<String> metrics;
   private Client client;
@@ -49,20 +72,29 @@ public class MetricsIT {
   @BeforeAll
   // end::BeforeAll[]
   // tag::oneTimeSetup[]
-  public static void oneTimeSetup() {
+  public static void oneTimeSetup() throws Exception {
     httpPort = System.getProperty("http.port");
     httpsPort = System.getProperty("https.port");
     baseHttpUrl = "http://localhost:" + httpPort + "/";
     baseHttpsUrl = "https://localhost:" + httpsPort + "/";
+    loadKeystore();
   }
   // end::oneTimeSetup[]
 
+  private static void loadKeystore() throws Exception {
+    Properties sysEnv = new Properties();
+    sysEnv.load(new FileInputStream(systemEnvPath));
+    char[] password = sysEnv.getProperty("keystore_password").toCharArray();
+    keystore = KeyStore.getInstance("PKCS12");
+    keystore.load(new FileInputStream(keystorePath), password);
+  }
+  
   // tag::BeforeEach[]
   @BeforeEach
   // end::BeforeEach[]
   // tag::setup[]
   public void setup() {
-    client = ClientBuilder.newClient();
+    client = ClientBuilder.newBuilder().trustStore(keystore).build();
     // tag::JsrJsonpProvider[]
     client.register(JsrJsonpProvider.class);
     // end::JsrJsonpProvider[]
@@ -91,7 +123,7 @@ public class MetricsIT {
     for (String metric : metrics) {
       if (metric.startsWith(
           "application_inventoryProcessingTime_rate_per_second")) {
-        float seconds = Float.parseFloat(metric.split(" ")[1]);
+        float seconds = Float.parseFloat(metric.split("\\s+")[1]);
         assertTrue(4 > seconds);
       }
     }
